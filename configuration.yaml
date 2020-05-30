@@ -1,0 +1,167 @@
+mlb_depr:
+    paths:
+      raw: /Volumes/Samsung_T5/mlb/gdApi/00_gameday/
+      normalized: /Volumes/Samsung_T5/mlb/gdApi/010_gameday_normalized/
+      game_team_stats: /Volumes/Samsung_T5/mlb/gdApi/game_team_stats/
+      batter_stats: /Volumes/Samsung_T5/mlb/gdApi/020_gameday_batter_records/
+      batter_saber: /Volumes/Samsung_T5/mlb/gdApi/020_gameday_batter_saber/
+      pitcher_stats: /Volumes/Samsung_T5/mlb/gdApi/021_gameday_pitcher_records/
+      pitcher_saber: /Volumes/Samsung_T5/mlb/gdApi/020_gameday_pitcher_saber/
+      game_team_metrics: /Volumes/Samsung_T5/mlb/gdApi/game_team_metrics/
+      matchup_schedule: /Volumes/Samsung_T5/mlb/gdApi/matchup_schedule/
+      initial_featurespaces: /Volumes/Samsung_T5/mlb/gdApi/030_initial_featurespace/
+      full_featurespaces: /Volumes/Samsung_T5/mlb/gdApi/031_full_featurespace/
+      selected_featurespace: /Volumes/Samsung_T5/mlb/gdApi/032_selected_featurespace/
+      reference: /Users/peteraltamura/Documents/GitHub/litesaber/references/
+    filenames:
+      data_dict: data_dictionary.csv
+    reference_files:
+      woba_fip: annual_woba_fip_constants.csv
+
+      # 001_retro_add_game_id     -->
+      # 00_bul_pull               -->     gameday/
+      # 010_standardize           -->     gameday_normalized/
+      # 020_batter_records        -->     gameday_batter_records/
+      # 021_pitcher_records       -->     gameday_pitcher_records/
+      # 022_team_batting_records  -->     gameday_team_batting_records/
+      # 023_team_pitching_records -->     gameday_team_pitching_records/
+      # 030_assemble_schedules    -->     gameday_schedules/
+
+mlb:
+  paths:
+    raw: /Volumes/Samsung_T5/mlb/msfApi/raw/{f}/
+    normalized: /Volumes/Samsung_T5/mlb/msfApi/normalized/{f}/
+    rolling_stats: /Volumes/Samsung_T5/mlb/msfApi/rolling_{}_stats/
+    featurespaces: /Volumes/Samsung_T5/mlb/msfApi/featurespaces/
+    fit_results: /Volumes/Samsung_T5/mlb/msfApi/fitResults/
+    wagerTables: /Volumes/Samsung_T5/mlb/msfApi/wagerTables/
+  feeds:
+    daily:
+      - daily_games
+      - daily_player_gamelogs
+      - daily_team_gamelogs
+      - daily_game_lines
+    seasonal:
+      - seasonal_player_stats
+      - seasonal_standings
+    other:
+      - player_injuries
+    game_spec:
+      - game_lineup
+      - game_playbyplay
+
+  seasons:
+    s2020:
+      seasonStart: "20200401"
+      playoffStart: "20201001"
+      seasonEnd: "20201101"
+    s2019:
+      seasonStart: "20190320"
+      playoffStart: "20190929"
+      seasonEnd: "20191101"
+    s2018:
+      seasonStart: "20180329"
+      playoffStart: "20181002"
+      seasonEnd: "20181028"
+    s2017:
+      seasonStart: "20170402"
+      playoffStart: "20171003"
+      seasonEnd: "20171101"
+
+
+nba:
+  paths:
+    error_log: /Volumes/Samsung_T5/nba/msfApi/errorLog/
+    raw: /Volumes/Samsung_T5/nba/msfApi/raw/{f}/
+    normalized: /Volumes/Samsung_T5/nba/msfApi/normalized/
+    trained_models: /Volumes/Samsung_T5/nba/msfApi/trained_models/
+    model_fs: /Volumes/Samsung_T5/nba/msfApi/model_fs/
+    featurespaces: /Volumes/Samsung_T5/nba/msfApi/featurespaces/
+    backtesting: /Volumes/Samsung_T5/nba/msfApi/featurespaces/backtesting/
+
+  feeds:
+    daily:
+      - daily_game_lines
+      - daily_player_gamelogs
+      - daily_team_gamelogs
+      - daily_games
+    seasonal:
+      - seasonal_player_stats
+    other:
+      - player_injuries
+
+  seasons:
+    s2019-2020:
+      seasonStart: "20191022"
+      playoffStart: "20200418"
+      seasonEnd: "20200701"
+    s2018-2019:
+      seasonStart: "20181016"
+      playoffStart: "20190413"
+      seasonEnd: "20190613"
+    s2017-2018:
+      seasonStart: "20171017"
+      playoffStart: "20180414"
+      seasonEnd: "20180608"
+    s2016-2017:
+      seasonStart: "20161015"
+      playoffStart: "20170415"
+      seasonEnd: "20170612"
+    s2015-2016:
+      seasonStart: "20151027"
+      playoffStart: "20160416"
+      seasonEnd: "20160619"
+    s2014-2015:
+      seasonStart: "20141028"
+      playoffStart: "20150418"
+      seasonEnd: "20150616"
+
+  divisions:
+    - atlantic
+    - central
+    - southeast
+    - northwest
+    - pacific
+    - southwest
+  conferences:
+    - eastern
+    - western
+  conference:
+    eastern:
+      atlantic:
+        - BOS
+        - TOR
+        - PHI
+        - BRO
+        - NYK
+      central:
+        - MIL
+        - IND
+        - DET
+        - CHI
+        - CLE
+      southeast:
+        - ORL
+        - CHA
+        - MIA
+        - WAS
+        - ATL
+    western:
+      northwest:
+        - DEN
+        - POR
+        - UTA
+        - OKL
+        - MIN
+      pacific:
+        - GSW
+        - LAC
+        - SAC
+        - LAL
+        - PHX
+      southwest:
+        - HOU
+        - SAS
+        - MEM
+        - NOP
+        - DAL
