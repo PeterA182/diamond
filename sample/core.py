@@ -1,6 +1,7 @@
 import os
 import gc
 import sys
+import pickle
 import warnings
 import numpy as np
 import pandas as pd
@@ -40,6 +41,7 @@ class diamond(object):
             '{}_roll{}'.format(s, w) for s in self.batting_stats for
             w in self.batting_roll_windows
         ]
+        self.batting_static_stats = ['atBats']
         
         # Check args
         assert not (
@@ -464,7 +466,8 @@ class diamond(object):
         # Subset
         bat_roll = bat_roll.loc[:,
             ['gameId', 'gameStartDate', 'playerId'] +
-            self.batting_roll_stats
+            self.batting_roll_stats +
+            self.batting_static_stats
         ]
 
         # Sort
@@ -495,33 +498,96 @@ class diamond(object):
         )
 
 
-    def fit_batter_cluster_model(self, k):
+    def fit_batter_cluster_model(self, k='best'):
         """
+        Add best cluster model as record in config to reference later
+        Batter cluster model contains rolling stats and rolling stat diffs
+            - exact features are saved as list in CSV
+            - pickled model is saved as object in same dir as CSV
+            - current "best" model will be saved in config
+            - model filenames formatted {batter}_k{6}.pkl
         """
-        # Add best cluster model as record in config to reference
+
+        # Check attribute
+        if not hasattr(self, 'batter_summary'):
+            self.add_batter_rolling_stats()
+
+        # Reference model saved in config and read in
+        if k == 'best':
+            path = CONFIG.get(self.league)\
+                .get('paths')\
+                .get('cluster_models')
+            model_fname = CONFIG.get(self.league)\
+                .get('models')\
+                .get('cluster')\
+                .get('batter')\
+                .get('model_filename')
+            feat_fname = CONFIG.get(self.league)\
+                .get('models')\
+                .get('cluster')\
+                .get('batter')\
+                .get('model_features')
+        else:
+            path = kwargs.get('path')
+            model_fname = kwargs.get('model_fname')
+            feat_fname = kwargs.get('feat_fname')
         
-        None
+        clstr = pickle.load(open(path + model_fname, 'rb'))
+        feats = pd.read_csv(path + feat_fname, dtype=str)
+        feats = list(set(feats.features))
+
+        # Get diff metrics involved with particular model 
+        diffs = [x for x in feats if 'diff' in x]
+
+        # Calculate diffs (order reversed)
+        for diff in diffs:
+            mtr = diff.split("_")[0]
+            from_ = diff.split("_")[2] #3
+            to_ = diff.split("_")[1] # 10
+            self.batter_summary.loc[:, '{}_{}_{}_diff'.format(mtr, to_, from_)] = (
+                self.batter_summary.loc[:, '{}_roll{}'.format(mtr, from_)] -
+                self.batter_summary.loc[:, '{}_roll{}'.format(mtr, to_)]
+            )
+
+        # Subset out summary to dropna and avoid error on fit
+        sub = self.batter_summary.loc[:, ['gameId', 'playerId'] + feats].dropna()
+        
+        # Fit cluster model
+        clstr.fit(sub[feats])
+        sub.loc[:, 'batterIdClusterName'] = clstr.labels_
+        
+        # Merge back to attribute
+        self.batter_summary = pd.merge(
+            self.batter_summary,
+            sub[['gameId', 'playerId', 'batterIdClusterName']],
+            how='left',
+            on=['gameId', 'playerId'],
+            validate='1:1'
+        )
 
 
+        def fit_starting_pitcher_cluster_model(self, k):
+        """
+        """
+
+        #
+        print()
+
+        
     def fit_bullpen_cluster_model(self, k):
         """
         """
 
-        None
-
-
-    def fit_starting_pitcher_cluster_model(self, k):
-        """
-        """
-
-        None
+        #
+        print()
 
 
     def add_wager_table(self, seasonKey):
         """
         """
 
-        None
+        #
+        print()
         
         
 if __name__ == "__main__":
@@ -531,11 +597,14 @@ if __name__ == "__main__":
     d = diamond(seasonKey='s2019')
     print("Adding batting stats")
     d.add_batter_rolling_stats()
+    d.fit_batter_cluster_model()
     d.batter_summary.to_csv('/Users/peteraltamura/Desktop/batter_summary_test.csv', index=False)
     print("Adding starting pitchers")
     d.add_starting_pitchers()
-    d.add_bullpen_summary()
     print("Adding pitcher rolling stats")
     d.add_pitcher_rolling_stats()
+    # d.fit_starting_pitcher_cluster_model()
+    d.add_bullpen_summary()
+    # d.fit_bullpen_cluster_model()
     d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
     print(d.__dict__)

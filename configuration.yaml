@@ -36,6 +36,7 @@ mlb:
     fit_results: /Volumes/Samsung_T5/mlb/msfApi/fitResults/
     wagerTables: /Volumes/Samsung_T5/mlb/msfApi/wagerTables/
     cluster_models: /Volumes/Samsung_T5/mlb/msfApi/clusterModels/
+
   feeds:
     daily:
       - daily_games
@@ -69,6 +70,21 @@ mlb:
       playoffStart: "20171003"
       seasonEnd: "20171101"
 
+  models:
+    cluster:
+      batter:
+        model_filename:
+          bat_k8_cluster_model.pkl
+        model_features:
+          bat_k8_cluster_model_features.csv
+      starting_pitcher:
+        model_filename:
+          pitch_cluster_model.pkl
+        model_features:
+          pitch_cluster_model_features.csv
+      bullpen:
+        model_filename:
+        model_features:
 
 nba:
   paths:
