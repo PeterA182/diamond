@@ -498,7 +498,8 @@ class diamond(object):
     def fit_batter_cluster_model(self, k):
         """
         """
-
+        # Add best cluster model as record in config to reference
+        
         None
 
 
