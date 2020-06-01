@@ -1,6 +1,7 @@
 import os
 import gc
 import sys
+import warnings
 import numpy as np
 import pandas as pd
 import utilities as util
@@ -79,6 +80,8 @@ class diamond(object):
 
     def add_starting_pitchers(self, dispositions=['home', 'away']):
         """
+        ADDS DIMENSIONS TO SUMMARY 
+        ADDS ATTRIBUTE ".starters"
         """
 
         # Paths
@@ -146,10 +149,84 @@ class diamond(object):
             validate='1:1'
         )
 
+
+    def add_bullpen_summary(self, dispositions=['home', 'away']):
+        """
+        ADDS ATTRIBUTE "bullpens_summary"
+        """
+
+        # Get atbats, filter to where not equal to starters
+        if not all(
+            s in self.summary.columns for s in \
+           ['{}StartingPitcherId'.format(d) for d in dispositions]
+        ):
+            self.add_starting_pitchers()
+        
+        # Get atbats
+        # Paths
+        atbats_path = CONFIG.get(self.league)\
+            .get('paths')\
+            .get('normalized').format(
+                f='game_atbats'
+            )
+        atbats_paths = [atbats_path+d+"/" for d in os.listdir(atbats_path) if (
+            (d >= self.min_date_gte)
+            &
+            (d <= self.max_date_lte)
+        )]
+        atbats_paths_full = []
+        for abp in atbats_paths:
+            atbats_paths_full.extend([abp+fname for fname in os.listdir(abp)])
+
+        # Get atbats and sort by inning / outCount
+        df_ab = pd.concat(
+            objs=[pd.read_parquet(p) for p in atbats_paths_full],
+            axis=0
+        )
+        df_ab = df_ab.loc[:, ['gameId', 'pitcherId', 'inning', 'inningHalf', 'outCount']]
+        
+        # Select home, sort, dd, remove starter, and rerank
+        bullpen_summary = []
+        sides = {'TOP': 'home', 'BOTTOM': 'away'}
+        for half_, disp  in sides.items():
+
+            # Set up starter map for later mask
+            startingPitcherMap = self.summary.set_index('gameId')\
+                ['{}StartingPitcherId'.format(disp)].to_dict()
+            
+            df_ab_h = df_ab.loc[df_ab['inningHalf']==half_, :]
+            # Sort
+            df_ab_h = df_ab_h.sort_values(by=['gameId', 'inning', 'outCount'], ascending=True, inplace=False)
+            # Drop labels
+            df_ab_h = df_ab_h.drop(labels=['inning', 'outCount'], axis=1, inplace=False)
+            # Remove pitcher who was already identified as starter (self.summary['homeStartingPitcherId'].iloc[0]?
+            df_ab_h.loc[:, '{}StartingPitcherId'.format(disp)] = \
+                df_ab_h['gameId'].map(startingPitcherMap)
+            df_ab_h = df_ab_h.loc[df_ab_h['pitcherId'] != df_ab_h['{}StartingPitcherId'.format(disp)], :]
+            # Handle ordering
+            df_ab_h['pitcherAppearOrder'] = df_ab_h.groupby(by=['gameId'])['pitcherId'].rank(method='first')
+            df_ab_h = df_ab_h.groupby(by=['gameId', 'pitcherId'], as_index=False).agg({'pitcherAppearOrder': 'min'})
+            df_ab_h['pitcherAppearOrder'] = df_ab_h.groupby(by=['gameId'])['pitcherId'].rank(method='first')
+            df_ab_h['pitcherAppearOrderMax'] = df_ab_h.groupby('gameId')['pitcherAppearOrder'].transform('max')
+            # Label middle pitchers relief role and last pitcher closer` role
+            msk = (df_ab_h['pitcherAppearOrder']==df_ab_h['pitcherAppearOrderMax'])
+            df_ab_h.loc[msk, 'pitcherRoleType'] = 'closer'
+            df_ab_h.loc[~msk, 'pitcherRoleType'] = 'reliever'
+
+            # Subset (TODO add first inning appeared)
+            df_ab_h = df_ab_h.loc[:, ['gameId', 'pitcherId', 'pitcherRoleType', 'pitcherAppearOrder']]
+            df_ab_h.loc[:, 'pitcherDisp'] = disp
+            bullpen_summary.append(df_ab_h)
+        bullpen_summary = pd.concat(objs=bullpen_summary, axis=0)
+        self.bullpen_summary = bullpen_summary
+        
+
         
     def add_pitcher_rolling_stats(
-            self, pitcher_cols=['homeStartingPitcherId', 'awayStartingPitcherId'],
-            shift_back=True
+        self,
+        dispositions=['home', 'away'],
+        pitcher_roll_types=['starter', 'reliever', 'closer'],
+        shift_back=True    
     ):
         """
         """
@@ -195,46 +272,124 @@ class diamond(object):
         for col in self.pitching_roll_stats:
             ptch_roll = ptch_roll.loc[~ptch_roll[col].isin([np.inf, -np.inf]), :]
 
-        # Prep self.starting_pitcher_stats
-        self.starting_pitcher_stats = \
-            self.summary[['gameId'] + pitcher_cols]
-            
-        # Merge back to starters (one at a time)
-        # Home
-        if 'homeStartingPitcherId' in pitcher_cols:
-            df = ptch_roll.rename(
-                columns={c: 'homeStarter_{}'.format(c) for
-                         c in self.pitching_stats},
-                inplace=False)
-            self.starting_pitcher_stats = pd.merge(
-                self.starting_pitcher_stats,
-                df,
-                how='left',
-                left_on=['gameId', 'homeStartingPitcherId'],
-                right_on=['gameId', 'playerId'],
-                validate='1:1'
-            )
-            self.starting_pitcher_stats.drop(labels=['playerId'],
-                                             axis=1,
-                                             inplace=True)
+        # Check if starter / all designation
+        if 'starter' in pitcher_roll_types:
+            print("    Adding stats for starters")
 
-        # Away
-        if 'awayStartingPitcherId' in pitcher_cols:
-            df = ptch_roll.rename(
-                columns={c: 'awayStarter_{}'.format(c) for
-                         c in self.pitching_stats},
-                inplace=False)
-            self.starting_pitcher_stats = pd.merge(
-                self.starting_pitcher_stats,
-                df,
-                how='left',
-                left_on=['gameId', 'awayStartingPitcherId'],
-                right_on=['gameId', 'playerId'],
-                validate='1:1'
-            )
-            self.starting_pitcher_stats.drop(labels=['playerId'],
-                                             axis=1,
-                                             inplace=True)
+            # Check that summary attribute has starting pitchers
+            if not any('StartingPitcherId' in col for col in
+                       self.summary.columns):
+                self.add_starting_pitchers(dispositions=dispositions)
+
+            # Merge back to starters (one at a time)
+            pitcher_cols = ['{}StartingPitcherId'.format(d) for
+                            d in dispositions]
+
+            # Prep self.starting_pitcher_stats
+            self.starting_pitcher_stats = \
+                self.summary[['gameId'] + pitcher_cols]
+            
+            for disp in dispositions:           
+                df = ptch_roll.rename(
+                    columns={stat: '{}Starter_{}'.format(disp, stat) for
+                             stat in self.pitching_stats},
+                    inplace=False)
+                self.starting_pitcher_stats = pd.merge(
+                    self.starting_pitcher_stats,
+                    df,
+                    how='left',
+                    left_on=['gameId', '{}StartingPitcherId'.format(disp)],
+                    right_on=['gameId', 'playerId'],
+                    validate='1:1'
+                )
+                self.starting_pitcher_stats.drop(labels=['playerId'],
+                                                 axis=1,
+                                                 inplace=True)
+
+        # Check if reliever / all designation
+        bullpen_reconstruct = []
+        if 'reliever' in pitcher_roll_types:
+            print("    Adding stats for relievers")
+            
+            # Check attribute (try / except cheaper but less readable)
+            if not hasattr(self, 'bullpen_summary'):
+                self.add_bullpen_summary(self, dispositions=dispositions)
+
+            # Merge back to relievers in bullpen summary
+            msk = (self.bullpen_summary['pitcherRoleType'] == 'reliever')
+            bullpen = self.bullpen_summary.loc[msk, :]
+            #hold = self.bullpen_summary.loc[~msk, :]
+            #bullpen_recon = []
+            if bullpen.shape[0] == 0:
+                warnings.warn("    No relief pitchers found in bullpen_summary attribute")
+            
+            if not all(d in dispositions for d in ['home', 'away']):
+                assert len(dispositions) == 1 and dispositions[0] in ['home', 'away']
+            for disp in dispositions:
+                bullpen_disp = bullpen.loc[bullpen['pitcherDisp'] == disp, :]
+                #df = ptch_roll.rename(
+                #    columns={stat: '{}Reliever_{}'.format(disp, stat) for
+                #             stat in self.pitching_stats},
+                #    inplace=False
+                #)
+                bullpen_disp = pd.merge(
+                    bullpen_disp,
+                    ptch_roll,
+                    #df,
+                    how='left',
+                    left_on=['gameId', 'pitcherId'],
+                    right_on=['gameId', 'playerId'],
+                    validate='1:1'
+                )
+                bullpen_disp.drop(labels=['playerId'], axis=1, inplace=True)
+                bullpen_reconstruct.append(bullpen_disp)
+#            bullpen_recon = pd.concat(objs=bullpen_recon, axis=0)
+            
+#            self.bullpen_summary = bullpen_recon
+
+        # TODO FIX CLOSER MERGE _x _y 
+        if 'closer' in pitcher_roll_types:
+            print("    Adding stats for closers")
+
+            # Check if closer / all designation
+            if not hasattr(self, 'bullpen_summary'):
+                self.add_bullpen_summary(self, dispositions=dispositions)
+
+            # Merge back to closers in bullpen summary
+            msk = (self.bullpen_summary['pitcherRoleType'] == 'closer')
+            bullpen = self.bullpen_summary.loc[msk, :]
+            #hold = self.bullpen_summary.loc[~msk, :]
+            #bullpen_recon = [hold]
+            if bullpen.shape[0] == 0:
+                warnings.warn("    No closing pitchers found in bullpen_summary attribute")
+
+            if not all(d in dispositions for d in ['home', 'away']):
+                assert len(dispositions) == 1 and dispositions[0] in ['home', 'away']
+            for disp in dispositions:
+                bullpen_disp = bullpen.loc[bullpen['pitcherDisp'] == disp, :]
+                #df = ptch_roll.rename(
+                #    columns={stat: '{}Closer_{}'.format(disp, stat) for
+                #             stat in self.pitching_stats},
+                #    inplace=False
+                #)
+                bullpen_disp = pd.merge(
+                    bullpen_disp,
+                    ptch_roll,
+                    #df,
+                    how='left',
+                    left_on=['gameId', 'pitcherId'],
+                    right_on=['gameId', 'playerId'],
+                    validate='1:1'
+                )
+                bullpen_disp.drop(labels=['playerId'], axis=1, inplace=True)
+                bullpen_reconstruct.append(bullpen_disp)
+        bullpen_reconstruct = pd.concat(objs=bullpen_reconstruct, axis=0)
+
+        self.bullpen_summary = bullpen_reconstruct
+                
+                
+                
+            
             
 
     def add_lineups(self, status='auto'):
@@ -273,5 +428,7 @@ if __name__ == "__main__":
     d = diamond(seasonKey='s2019')
     print("Adding starting pitchers")
     d.add_starting_pitchers()
+    d.add_bullpen_summary()
     print("Adding pitcher rolling stats")
     d.add_pitcher_rolling_stats()
+    d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
