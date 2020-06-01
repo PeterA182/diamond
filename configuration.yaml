@@ -35,6 +35,7 @@ mlb:
     featurespaces: /Volumes/Samsung_T5/mlb/msfApi/featurespaces/
     fit_results: /Volumes/Samsung_T5/mlb/msfApi/fitResults/
     wagerTables: /Volumes/Samsung_T5/mlb/msfApi/wagerTables/
+    cluster_models: /Volumes/Samsung_T5/mlb/msfApi/clusterModels/
   feeds:
     daily:
       - daily_games

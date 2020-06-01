@@ -35,7 +35,11 @@ class diamond(object):
 
         # Batting Stats Attributes
         self.batting_roll_windows = [1, 3, 5, 10]
-        self.batting_stats = []
+        self.batting_stats = ['obp', 'slg', 'woba', 'iso']
+        self.batting_roll_stats = [
+            '{}_roll{}'.format(s, w) for s in self.batting_stats for
+            w in self.batting_roll_windows
+        ]
         
         # Check args
         assert not (
@@ -286,7 +290,7 @@ class diamond(object):
                             d in dispositions]
 
             # Prep self.starting_pitcher_stats
-            self.starting_pitcher_stats = \
+            self.starting_pitcher_summary = \
                 self.summary[['gameId'] + pitcher_cols]
             
             for disp in dispositions:           
@@ -294,15 +298,15 @@ class diamond(object):
                     columns={stat: '{}Starter_{}'.format(disp, stat) for
                              stat in self.pitching_stats},
                     inplace=False)
-                self.starting_pitcher_stats = pd.merge(
-                    self.starting_pitcher_stats,
+                self.starting_pitcher_summary = pd.merge(
+                    self.starting_pitcher_summary,
                     df,
                     how='left',
                     left_on=['gameId', '{}StartingPitcherId'.format(disp)],
                     right_on=['gameId', 'playerId'],
                     validate='1:1'
                 )
-                self.starting_pitcher_stats.drop(labels=['playerId'],
+                self.starting_pitcher_summary.drop(labels=['playerId'],
                                                  axis=1,
                                                  inplace=True)
 
@@ -386,25 +390,109 @@ class diamond(object):
         bullpen_reconstruct = pd.concat(objs=bullpen_reconstruct, axis=0)
 
         self.bullpen_summary = bullpen_reconstruct
-                
-                
-                
-            
-            
+
 
     def add_lineups(self, status='auto'):
         """
         status: 'auto' - expected/actual
         """
 
-        None
+        # Add lineups
+        #     add expected for upcoming game
+        #     add actual for completed games
+        lineups_path = CONFIG.get(self.league)\
+                             .get('paths')\
+                             .get('normalized')\
+                             .format(f='game_lineup')
+        df_lineup = pd.concat(
+            objs=[pd.read_parquet(lineups_path+fname) for fname in os.listdir(lineups_path) if 
+                 ((fname.replace(".parquet", "") >= self.min_date_gte)
+                  &
+                  (fname.replace(".parquet", "") <= self.max_date_lte))],
+            axis=0
+        )
+
+        # Actual
+        actual = df_lineup.loc[df_lineup['positionStatus'] == 'actual', :]
+        actual = actual.drop_duplicates(subset=['gameId', 'playerId'])
+        actual_ids = list(set(actual.gameId))
+
+        # Expected
+        exp = df_lineup.loc[(
+            (df_lineup['positionStatus'] == 'expected')
+            &
+            ~(df_lineup['gameId'].isin(actual_ids))
+        ), :]
+        exp = exp.drop_duplicates(subset=['gameId', 'playerId'])
+
+        # Concat
+        actual = pd.concat(objs=[actual, exp], axis=0)
+        actual = actual.rename(columns={'teamDisposition': 'batterDisposition'})
+
+        self.lineups = actual
 
 
     def add_batter_rolling_stats(self, shift_back=True):
         """
+        Adds:
+            attrib self.batter_summary
         """
 
-        None
+        # Path
+        bat_roll_path = CONFIG.get(self.league)\
+            .get('paths')\
+            .get('rolling_stats')\
+            .format('batting')+"player/"
+
+        # Read in
+        bat_roll = pd.concat(
+            objs=[pd.read_parquet(bat_roll_path+fname) for fname in
+                  os.listdir(bat_roll_path) if 
+                 ((fname.replace(".parquet", "") >= self.min_date_gte)
+                  &
+                  (fname.replace(".parquet", "") <= self.max_date_lte))],
+            axis=0
+        )
+
+        # Create rolling metrics
+        cols = ['gameId', 'gameStartDate', 'playerId'] +\
+            self.batting_roll_stats
+        for mt in cols:
+            if mt not in bat_roll.columns:
+                print("MISSING: {}".format(mt))
+
+        # Subset
+        bat_roll = bat_roll.loc[:,
+            ['gameId', 'gameStartDate', 'playerId'] +
+            self.batting_roll_stats
+        ]
+
+        # Sort
+        bat_roll.sort_values(by=['gameStartDate'], ascending=True, inplace=True)
+
+        # Shift back if interested in rolling stats leading up to game
+        if shift_back:
+            for col in self.batting_roll_stats:
+                msk = (bat_roll['playerId'].shift(1)==bat_roll['playerId'])
+                bat_roll.loc[msk, col] = bat_roll[col].shift(1)
+
+        # Handle Infs
+        for col in self.batting_roll_stats:
+            bat_roll = bat_roll.loc[~bat_roll[col].isin([np.inf, -np.inf]), :]
+
+        # Merge batting stats rolling (with shift) on to batters from lineup
+        # Check that summary attribute has starting pitchers
+        if not hasattr(self, 'lineups'):
+            self.add_lineups()
+            
+        # Prep self.batter_summary
+        self.batter_summary = pd.merge(
+            self.lineups[['gameId', 'playerId']],
+            bat_roll,
+            how='left',
+            on=['gameId', 'playerId'],
+            validate='1:1'
+        )
 
 
     def fit_batter_cluster_model(self, k):
@@ -414,7 +502,21 @@ class diamond(object):
         None
 
 
-    def fit_pitcher_cluster_model(self, k):
+    def fit_bullpen_cluster_model(self, k):
+        """
+        """
+
+        None
+
+
+    def fit_starting_pitcher_cluster_model(self, k):
+        """
+        """
+
+        None
+
+
+    def add_wager_table(self, seasonKey):
         """
         """
 
@@ -426,9 +528,13 @@ if __name__ == "__main__":
     
     print("Instantiate")
     d = diamond(seasonKey='s2019')
+    print("Adding batting stats")
+    d.add_batter_rolling_stats()
+    d.batter_summary.to_csv('/Users/peteraltamura/Desktop/batter_summary_test.csv', index=False)
     print("Adding starting pitchers")
     d.add_starting_pitchers()
     d.add_bullpen_summary()
     print("Adding pitcher rolling stats")
     d.add_pitcher_rolling_stats()
     d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
+    print(d.__dict__)
