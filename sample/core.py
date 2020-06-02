@@ -292,25 +292,30 @@ class diamond(object):
                             d in dispositions]
 
             # Prep self.starting_pitcher_stats
+            p = []
+            for pc in pitcher_cols:
+                df = self.summary.loc[:, ['gameId', pc]]
+                df = df.loc[df[pc].notnull(), :]
+                df.rename(columns={pc: 'pitcherId'}, inplace=True)
+                df.loc[:, 'pitcherDisposition'] = pc[:4].lower()
+                p.append(df)
+
+            # concatenate to form attribute
             self.starting_pitcher_summary = \
-                self.summary[['gameId'] + pitcher_cols]
-            
-            for disp in dispositions:           
-                df = ptch_roll.rename(
-                    columns={stat: '{}Starter_{}'.format(disp, stat) for
-                             stat in self.pitching_stats},
-                    inplace=False)
-                self.starting_pitcher_summary = pd.merge(
-                    self.starting_pitcher_summary,
-                    df,
-                    how='left',
-                    left_on=['gameId', '{}StartingPitcherId'.format(disp)],
-                    right_on=['gameId', 'playerId'],
-                    validate='1:1'
-                )
-                self.starting_pitcher_summary.drop(labels=['playerId'],
-                                                 axis=1,
-                                                 inplace=True)
+                pd.concat(objs=p, axis=0)
+            self.starting_pitcher_summary = pd.merge(
+                self.starting_pitcher_summary,
+                ptch_roll,
+                how='left',
+                left_on=['gameId', 'pitcherId'],
+                right_on=['gameId', 'playerId'],
+                validate='1:1'
+            )
+            self.starting_pitcher_summary.drop(
+                labels=['playerId'],
+                axis=1,
+                inplace=True
+            )
 
         # Check if reliever / all designation
         bullpen_reconstruct = []
@@ -319,7 +324,7 @@ class diamond(object):
             
             # Check attribute (try / except cheaper but less readable)
             if not hasattr(self, 'bullpen_summary'):
-                self.add_bullpen_summary(self, dispositions=dispositions)
+                self.add_bullpen_summary(dispositions=dispositions)
 
             # Merge back to relievers in bullpen summary
             msk = (self.bullpen_summary['pitcherRoleType'] == 'reliever')
@@ -359,7 +364,7 @@ class diamond(object):
 
             # Check if closer / all designation
             if not hasattr(self, 'bullpen_summary'):
-                self.add_bullpen_summary(self, dispositions=dispositions)
+                self.add_bullpen_summary(dispositions=dispositions)
 
             # Merge back to closers in bullpen summary
             msk = (self.bullpen_summary['pitcherRoleType'] == 'closer')
@@ -538,16 +543,21 @@ class diamond(object):
 
         # Get diff metrics involved with particular model 
         diffs = [x for x in feats if 'diff' in x]
+        warnings.warn("'_' in metric not currently handled for batting")
 
         # Calculate diffs (order reversed)
         for diff in diffs:
+            # TODO - Issue if "_" in metric
             mtr = diff.split("_")[0]
             from_ = diff.split("_")[2] #3
             to_ = diff.split("_")[1] # 10
-            self.batter_summary.loc[:, '{}_{}_{}_diff'.format(mtr, to_, from_)] = (
+            new = '{}_{}_{}_diff'.format(mtr, to_, from_)
+            print(new)
+            self.batter_summary.loc[:, new] = (
                 self.batter_summary.loc[:, '{}_roll{}'.format(mtr, from_)] -
                 self.batter_summary.loc[:, '{}_roll{}'.format(mtr, to_)]
             )
+        assert all(f in self.batter_summary for f in feats)
 
         # Subset out summary to dropna and avoid error on fit
         sub = self.batter_summary.loc[:, ['gameId', 'playerId'] + feats].dropna()
@@ -566,12 +576,76 @@ class diamond(object):
         )
 
 
-        def fit_starting_pitcher_cluster_model(self, k):
+    def fit_starting_pitcher_cluster_model(self, k='best'):
         """
         """
 
-        #
-        print()
+        # Check attribute
+        if not hasattr(self, 'starting_pitcher_summary'):
+            self.add_starting_pitchers()
+            self.add_pitcher_rolling_stats()
+
+        if k == 'best':
+            path = CONFIG.get(self.league)\
+                .get('paths')\
+                .get('cluster_models')
+            model_fname = CONFIG.get(self.league)\
+                .get('models')\
+                .get('cluster')\
+                .get('starting_pitcher')\
+                .get('model_filename')
+            feat_fname = CONFIG.get(self.league)\
+                .get('models')\
+                .get('cluster')\
+                .get('starting_pitcher')\
+                .get('model_features')
+        else:
+            path = kwargs.get('path')
+            model_fname = kwargs.get('model_fname')
+            feat_fname = kwargs.get('feat_fname')
+        
+        clstr = pickle.load(open(path + model_fname, 'rb'))
+        feats = pd.read_csv(path + feat_fname, dtype=str)
+        feats = list(set(feats.features))
+
+        # Get diff metrics involved with particular model
+        diffs = [x for x in feats if 'diff' in x]
+
+        # Calculate diffs (order NOT reversed)
+        for diff in diffs:
+            if len(diff.split("_")) > 3:
+                mtr = "_".join(diff.split("_")[:-3])
+                from_ = "_".join(diff.split("_")[-3])
+                to_ = "_".join(diff.split("_")[-2])
+            else:
+                mtr = diff.split("_")[0]
+                from_ = diff.split("_")[1]
+                to_ = diff.split("_")[2]
+            new = '{}_{}_{}_diff'.format(mtr, from_, to_)
+            self.starting_pitcher_summary.loc[:, new] = (
+                self.starting_pitcher_summary.loc[:, '{}_roll{}'.format(mtr, from_)] -
+                self.starting_pitcher_summary.loc[:, '{}_roll{}'.format(mtr, to_)]
+            )
+        assert all(f in self.starting_pitcher_summary.columns for f in feats)
+
+        # Subset out summary to dropna and avoid error on fit
+        sub = self.starting_pitcher_summary.loc[:,
+            ['gameId', 'pitcherId'] + feats
+        ].dropna()
+
+        # Fit cluster model
+        clstr.fit(sub[feats])
+        sub.loc[:, 'startingPitcherClusterName'] = clstr.labels_
+
+        # Merge back to attribute
+        self.starting_pitcher_summary = pd.merge(
+            self.starting_pitcher_summary,
+            sub,
+            how='left',
+            left_on=['gameId', 'pitcherId'],
+            right_on=['gameId', 'pitcherId'],
+            validate='1:1'
+        )
 
         
     def fit_bullpen_cluster_model(self, k):
@@ -582,7 +656,15 @@ class diamond(object):
         print()
 
 
-    def add_wager_table(self, seasonKey):
+    def add_elo_scores(self):
+        """
+        """
+
+        #
+        print()
+
+
+    def add_wager_table(self, seasonKey=None):
         """
         """
 
@@ -599,12 +681,19 @@ if __name__ == "__main__":
     d.add_batter_rolling_stats()
     d.fit_batter_cluster_model()
     d.batter_summary.to_csv('/Users/peteraltamura/Desktop/batter_summary_test.csv', index=False)
-    print("Adding starting pitchers")
+    print("Adding starting pitcher summary")
     d.add_starting_pitchers()
+    print("Adding bullpen summary")
+    d.add_bullpen_summary()
     print("Adding pitcher rolling stats")
     d.add_pitcher_rolling_stats()
-    # d.fit_starting_pitcher_cluster_model()
-    d.add_bullpen_summary()
+    d.fit_starting_pitcher_cluster_model()
+    d.starting_pitcher_summary.to_csv('/Users/peteraltamura/Desktop/pitcher_summary_test.csv', index=False)
+    
     # d.fit_bullpen_cluster_model()
     d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
     print(d.__dict__)
+
+    # TODO - SCALE SCALE SCALE batter k pitcher k
+    # TODO - Improve pitcher K pitch type proportions, left right, etc
+    

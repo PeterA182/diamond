@@ -79,9 +79,9 @@ mlb:
           bat_k8_cluster_model_features.csv
       starting_pitcher:
         model_filename:
-          pitch_cluster_model.pkl
+          ptch_k3_cluster_model.pkl
         model_features:
-          pitch_cluster_model_features.csv
+          ptch_k3_cluster_model_features.csv
       bullpen:
         model_filename:
         model_features:
