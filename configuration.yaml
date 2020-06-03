@@ -73,18 +73,14 @@ mlb:
   models:
     cluster:
       batter:
-        model_filename:
-          bat_k8_cluster_model.pkl
-        model_features:
-          bat_k8_cluster_model_features.csv
+        model_filename: bat_k12_cluster_model.pkl
+        model_features: bat_k12_cluster_model_features.csv
       starting_pitcher:
-        model_filename:
-          ptch_k3_cluster_model.pkl
-        model_features:
-          ptch_k3_cluster_model_features.csv
+        model_filename: ptch_k17_cluster_model.pkl
+        model_features: ptch_k17_cluster_model_features.csv
       bullpen:
-        model_filename:
-        model_features:
+        model_filename: bullpen_k12_cluster_model.pkl
+        model_features: bullpen_k12_cluster_model_features.csv
 
 nba:
   paths:
