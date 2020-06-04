@@ -346,11 +346,6 @@ class diamond(object):
             for disp in dispositions:
                 bullpen_disp = bullpen.loc[bullpen['bullpenDisposition'] == disp, :]
                 bullpen_disp = bullpen_disp.loc[:, ['gameId', 'pitcherId']]
-                #df = ptch_roll.rename(
-                #    columns={stat: '{}Reliever_{}'.format(disp, stat) for
-                #             stat in self.pitching_stats},
-                #    inplace=False
-                #)
                 bullpen_disp = pd.merge(
                     bullpen_disp,
                     ptch_roll,
@@ -372,23 +367,24 @@ class diamond(object):
                 validate='1:1'
             )
 
-            # Set 
-            self.bullpen_reliever_summary = self.bullpen_reliever_summary.groupby(
-                by=['gameId', 'teamId', 'bullpenDisposition', 'pitcherId'],
+            # Set
+            # TODO Standard Deviation might not be best here
+            aggDict = {stat: ['mean', 'std'] for stat in [
+                x for x in self.bullpen_reliever_summary.columns if
+                any(y in x for y in self.pitching_stats)
+            ]}
+            df = self.bullpen_reliever_summary.groupby(
+                by=['gameId', 'teamId', 'bullpenDisposition'],
                 as_index=False
-            ).agg({stat: ['mean', 'std'] for stat in
-                [x for x in self.bullpen_reliever_summary if any(
-                    y in x for y in self.pitching_stats
-                )]})
-            self.bullpen_reliever_summary.columns = [
+            ).agg(aggDict)
+            for col in df.columns:
+                print(col, np.mean(df[col].isnull()))
+            print("ABOVE NEW CHECK")
+            df.columns = [
                 x[0] if x[1] == '' else x[0]+"~"+x[1] for x in
-                self.bullpen_reliever_summary.columns
+                df.columns
             ]
-            self.bullpen_reliever_summary.rename(
-                columns={x: x.replace("~mean", "") for x in
-                         self.bullpen_reliever_summary.columns},
-                inplace=True
-            )
+            self.bullpen_reliever_summary = df
             
         # TODO FIX CLOSER MERGE _x _y 
         if 'closer' in pitcher_roll_types:
@@ -443,11 +439,6 @@ class diamond(object):
                 x[0] if x[1] == '' else x[0]+"~"+x[1] for x in
                 self.bullpen_closer_summary.columns
             ]
-            self.bullpen_closer_summary.rename(
-                columns={x: x.replace("~mean", "") for x in
-                         self.bullpen_closer_summary.columns},
-                inplace=True
-            )
 
 
     def add_lineups(self, status='auto'):
@@ -683,11 +674,10 @@ class diamond(object):
                 self.starting_pitcher_summary.loc[:, '{}_roll{}'.format(mtr, to_)]
             )
         assert all(f in self.starting_pitcher_summary.columns for f in feats)
-
+        
         # Handle infinites (will error in scaler fit to follow)
-        print("Missing features")
-        print([f for f in feats if f not in self.starting_pitcher_summary.columns])
-        sub = self.starting_pitcher_summary.loc[:, ['gameId', 'pitcherId'] + feats].dropna()
+        sub = self.starting_pitcher_summary.loc[:, ['gameId', 'pitcherId'] + feats]\
+                                           .dropna()
         for col in feats:
             med = np.median(sub.loc[~sub[col].isin([np.inf, -np.inf]), :][col])
             sub.loc[sub[col].isin([np.inf, -np.inf]), col] = med
@@ -755,20 +745,34 @@ class diamond(object):
             feats = list(set(feats.features))
             
             if roletype == 'reliever':
-                assert all(f in self.bullpen_reliever_summary.columns for f in feats)
-
+                print(self.bullpen_reliever_summary.shape)
                 # Subset out summary to dropna and avoid error on fit
                 sub = self.bullpen_reliever_summary.loc[:,
                     ['gameId', 'teamId'] + feats
-                ].dropna()
+                ]
+                for col in sub.columns:
+                    print(col, np.mean(sub[col].isnull()))
+                print(sub.shape)
                 for col in feats:
                     med = np.median(sub.loc[~sub[col].isin([np.inf, -np.inf]), :][col])
                     sub.loc[sub[col].isin([np.inf, -np.inf]), col] = med
-
+                print("Bullpen summary missing features below")
+                print([
+                    f for f in feats if f not in
+                    self.bullpen_reliever_summary.columns
+                ])
+                print(sub.shape)
+                assert all(f in self.bullpen_reliever_summary.columns for f in feats)
+                print("------------")
+                print("------------")
+                print(sub[feats].head())
+                print(sub[feats].shape)
                 # Fit cluster model
                 scaler = StandardScaler()
-                df_sc = scaler.fit_transform(sub[feats])
+                scaler.fit(sub[feats])
+                df_sc = scaler.transform(sub[feats])
                 clstr.fit(df_sc)
+                
                 sub.loc[:, 'teamBullpenClusterName'] = clstr.labels_
                 sub = sub.loc[:, ['gameId', 'teamId', 'teamBullpenClusterName']]
                 # Subset of summary
