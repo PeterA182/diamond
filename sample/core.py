@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import datetime as dt
+import helpers as helper
 import utilities as util
 
 from copy import deepcopy
@@ -93,6 +94,7 @@ class diamond(object):
         """
         ADDS DIMENSIONS TO SUMMARY
         """
+        helper.progress("Adding Starting Pitchers Attribute")
 
         # Paths
         atbats_path = CONFIG.get(self.league)\
@@ -226,6 +228,7 @@ class diamond(object):
         """
         ADDS ATTRIBUTE "bullpens_summary"
         """
+        helper.progress("Adding Bullpen Summary Attribute")
 
         # Get atbats, filter to where not equal to starters
         if not all(
@@ -255,8 +258,7 @@ class diamond(object):
             objs=[pd.read_parquet(p) for p in atbats_paths_full],
             axis=0
         )
-        print(sorted(list(df_ab.columns)))
-        df_ab = df_ab.loc[:, ['gameId', 'pitcherId', 'homeTeamId', 'awayTeamId',
+        df_ab = df_ab.loc[:, ['gameId', 'gameStartTime', 'pitcherId', 'homeTeamId', 'awayTeamId',
                               'inning', 'inningHalf', 'outCount']]
         
         # Select home, sort, dd, remove starter, and rerank
@@ -271,7 +273,7 @@ class diamond(object):
             df_ab_h = df_ab.loc[df_ab['inningHalf']==half_, :]
             # Sort
             df_ab_h = df_ab_h.sort_values(
-                by=['gameId', 'inning', 'outCount'],
+                by=['gameId', 'gameStartTime', 'inning', 'outCount'],
                 ascending=True,
                 inplace=False
             )
@@ -290,7 +292,7 @@ class diamond(object):
             df_ab_h['pitcherAppearOrder'] = df_ab_h\
                 .groupby(by=['gameId'])['pitcherId'].rank(method='first')
             df_ab_h = df_ab_h.groupby(
-                by=['gameId', '{}TeamId'.format(disp), 'pitcherId'],
+                by=['gameId', 'gameStartTime', '{}TeamId'.format(disp), 'pitcherId'],
                 as_index=False).agg({'pitcherAppearOrder': 'min'})
             df_ab_h['pitcherAppearOrder'] = df_ab_h\
                 .groupby(by=['gameId'])['pitcherId'].rank(method='first')
@@ -303,7 +305,7 @@ class diamond(object):
             df_ab_h.loc[~msk, 'pitcherRoleType'] = 'reliever'
 
             # Subset (TODO add first inning appeared)
-            df_ab_h = df_ab_h.loc[:, ['gameId', 'pitcherId', 'pitcherRoleType',
+            df_ab_h = df_ab_h.loc[:, ['gameId', 'gameStartTime', 'pitcherId', 'pitcherRoleType',
                                       '{}TeamId'.format(disp), 'pitcherAppearOrder']]
             df_ab_h.rename(columns={'{}TeamId'.format(disp): 'teamId'}, inplace=True)
             df_ab_h['bullpenDisposition'] = disp
@@ -324,6 +326,7 @@ class diamond(object):
     ):
         """
         """
+        helper.progress("Adding Pitcher Rolling Stats to pitching-related attributes")
 
         # Path
         ptch_roll_path = CONFIG.get(self.league)\
@@ -343,9 +346,6 @@ class diamond(object):
         # Create rolling metrics
         cols = ['gameId', 'gameStartDate', 'playerId'] +\
             self.pitching_roll_stats
-        for mt in cols:
-            if mt not in ptch_roll.columns:
-                print("MISSING: {}".format(mt))
 
         # Subset
         ptch_roll = ptch_roll.loc[:,
@@ -414,7 +414,7 @@ class diamond(object):
                 self.add_bullpen_summary(dispositions=dispositions)
 
             # Merge back to relievers in bullpen summary
-            msk = (self.bullpen_reliever_summary['pitcherRoleType'] == 'reliever')
+            msk = (self.bullpen_reliever_summary['pitcherRoleType'].str.lower() == 'reliever')
             bullpen = self.bullpen_reliever_summary.loc[msk, :]
             if bullpen.shape[0] == 0:
                 warnings.warn("    No relief pitchers found in bullpen_summary attribute")
@@ -453,12 +453,9 @@ class diamond(object):
                 any(y in x for y in self.pitching_stats)
             ]}
             df = self.bullpen_reliever_summary.groupby(
-                by=['gameId', 'teamId', 'bullpenDisposition'],
+                by=['gameId', 'gameStartTime', 'teamId', 'bullpenDisposition'],
                 as_index=False
             ).agg(aggDict)
-            for col in df.columns:
-                print(col, np.mean(df[col].isnull()))
-            print("ABOVE NEW CHECK")
             df.columns = [
                 x[0] if x[1] == '' else x[0]+"~"+x[1] for x in
                 df.columns
@@ -484,10 +481,10 @@ class diamond(object):
             bullpen_reconstruct = []
             for disp in dispositions:
                 bullpen_disp = bullpen.loc[bullpen['bullpenDisposition'] == disp, :]
+                bullpen_disp = bullpen_disp.loc[:, ['gameId', 'pitcherId']]
                 bullpen_disp = pd.merge(
                     bullpen_disp,
                     ptch_roll,
-                    #df,
                     how='left',
                     left_on=['gameId', 'pitcherId'],
                     right_on=['gameId', 'playerId'],
@@ -502,7 +499,7 @@ class diamond(object):
                 self.bullpen_closer_summary,
                 bullpen_reconstruct,
                 how='left',
-                on=['gameId', 'teamId', 'bullpenDisposition', 'pitcherId'],
+                on=['gameId', 'pitcherId'],
                 validate='1:1'
             )
 
@@ -513,11 +510,9 @@ class diamond(object):
                 any(y in x for y in self.pitching_stats)
             ]}
             df = self.bullpen_closer_summary.groupby(
-                by=['gameId', 'teamId', 'bullpenDisposition'],
+                by=['gameId', 'gameStartTime', 'teamId', 'bullpenDisposition'],
                 as_index=False
             ).agg(aggDict)
-            for col in df.columns:
-                print(col, np.mean(df[col].isnull()))
             df.columns = [
                 x[0] if x[1] == '' else x[0]+"~"+x[1] for x in
                 df.columns
@@ -529,6 +524,7 @@ class diamond(object):
         """
         status: 'auto' - expected/actual
         """
+        helper.progress("Adding Lineups Attribute")
 
         # Add lineups
         #     add expected for upcoming game
@@ -590,10 +586,7 @@ class diamond(object):
         # Create rolling metrics
         cols = ['gameId', 'gameStartDate', 'playerId'] +\
             self.batting_roll_stats
-        for mt in cols:
-            if mt not in bat_roll.columns:
-                print("MISSING: {}".format(mt))
-
+        
         # Subset
         bat_roll = bat_roll.loc[:,
             ['gameId', 'gameStartDate', 'playerId'] +
@@ -829,29 +822,18 @@ class diamond(object):
             feats = list(set(feats.features))
             
             if roletype == 'reliever':
-                print(self.bullpen_reliever_summary.shape)
-                # Subset out summary to dropna and avoid error on fit
+                assert all(f in self.bullpen_reliever_summary.columns for f in feats)
                 sub = self.bullpen_reliever_summary.loc[:,
                     ['gameId', 'teamId'] + feats
                 ]
-                for col in sub.columns:
-                    print(col, np.mean(sub[col].isnull()))
-                print(sub.shape)
                 for col in feats:
                     med = np.nanmedian(sub.loc[~sub[col].isin([np.inf, -np.inf]), :][col])
                     sub.loc[sub[col].isin([np.inf, -np.inf]), col] = med
                     sub.loc[sub[col].isnull(), col] = med
-                print("Bullpen summary missing features below")
-                print([
-                    f for f in feats if f not in
-                    self.bullpen_reliever_summary.columns
-                ])
-                print(sub.shape)
-                assert all(f in self.bullpen_reliever_summary.columns for f in feats)
-                print("------------")
-                print("------------")
-                print(sub[feats].head())
-                print(sub[feats].shape)
+                
+            
+                
+
                 # Fit cluster model
                 scaler = StandardScaler()
                 scaler.fit(sub[feats])
@@ -871,7 +853,6 @@ class diamond(object):
                 )
 
             if roletype == 'closer':
-                print([f for f in feats if f not in self.bullpen_closer_summary.columns])
                 assert all(f in self.bullpen_closer_summary.columns for f in feats)
                 sub = self.bullpen_closer_summary.loc[:,
                     ['gameId', 'teamId'] + feats
