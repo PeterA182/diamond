@@ -5,6 +5,7 @@ import pickle
 import warnings
 import numpy as np
 import pandas as pd
+import datetime as dt
 import utilities as util
 
 from copy import deepcopy
@@ -23,11 +24,12 @@ class diamond(object):
 
     """
     
-    def __init__(self, seasonKey=None, min_date_gte=None, max_date_lte=None):
+    def __init__(self, seasonKey, min_date_gte=None, max_date_lte=None, upcoming_start_gte=None):
         self.seasonKey = seasonKey
         self.league = 'mlb'
         self.min_date_gte = min_date_gte
         self.max_date_lte = max_date_lte
+        self.upcoming_start_gte = upcoming_start_gte
 
         # Pitching Stats attributes
         self.pitching_roll_windows = [1, 3, 5, 10]
@@ -89,8 +91,7 @@ class diamond(object):
 
     def add_starting_pitchers(self, dispositions=['home', 'away']):
         """
-        ADDS DIMENSIONS TO SUMMARY 
-        ADDS ATTRIBUTE ".starters"
+        ADDS DIMENSIONS TO SUMMARY
         """
 
         # Paths
@@ -113,7 +114,21 @@ class diamond(object):
             objs=[pd.read_parquet(p) for p in atbats_paths_full],
             axis=0
         )
+        df_ab.loc[:, 'gameStartTime'] = df_ab['gameStartTime'].str[:10]
+        df_ab.loc[:, 'gameStartTime'] = pd.to_datetime(df_ab['gameStartTime'])
 
+        # Save upcoming to use lineup approach with later
+        if self.upcoming_start_gte:
+            df_upc = df_ab.loc[df_ab['gameStartTime'] >= self.upcoming_start_gte, :]
+            df_ab = df_ab.loc[df_ab['gameStartTime'] < self.upcoming_start_gte, :]
+        else:
+            df_upc = df_ab.loc[df_ab['gameStartTime'] >= dt.datetime.now(), :]
+            df_ab = df_ab.loc[df_ab['gameStartTime'] < dt.datetime.now(), :]
+        
+
+        # -------------------------
+        # -------------------------
+        # Filter to games in the past and use atbats to get starter (in case lineup wrong)
         # Get Home Starters
         df_top1 = df_ab.loc[(
             (df_ab['inning']==1) &
@@ -141,7 +156,7 @@ class diamond(object):
         )
 
         # Assemble starters
-        df_starters = pd.merge(
+        df_hist_starters = pd.merge(
             df_home_starters, 
             df_away_starters, 
             how='outer', 
@@ -149,7 +164,55 @@ class diamond(object):
             validate='1:1'
         )
 
-        # Merge
+        # -------------------------
+        # -------------------------
+        # Filter to games in the current/future and use
+        #    lineups to get starter (in case lineup wrong)
+        if not hasattr(self, 'lineups'):
+            self.add_lineups()
+        df_lup_home = self.lineups.loc[
+            self.lineups['batterDisposition'].str.lower() == 'home', :]
+        df_lup_away = self.lineups.loc[
+            self.lineups['batterDisposition'].str.lower() == 'away', :]
+
+        # Filter down
+        df_lup_home = df_lup_home.loc[(
+            (df_lup_home['playerPositionGeneral'] == 'P')
+            &
+            (df_lup_home['gameId'].isin(list(df_upc.gameId)))
+        ), :]
+        df_lup_away = df_lup_away.loc[(
+            (df_lup_away['playerPositionGeneral'] == 'P')
+            &
+            (df_lup_away['gameId'].isin(list(df_upc.gameId)))
+        ), :]
+                                      
+        # Isolate
+        df_lup_home.rename(columns={'playerId': 'homeStartingPitcherId'}, inplace=True)
+        df_lup_home = df_lup_home.loc[:,
+            ['gameId', 'homeStartingPitcherId']]\
+            .drop_duplicates(subset=['gameId'], inplace=False)
+        df_lup_away.rename(columns={'playerId': 'awayStartingPitcherId'}, inplace=True)
+        df_lup_away = df_lup_away.loc[:,
+            ['gameId', 'awayStartingPitcherId']]\
+            .drop_duplicates(subset=['gameId'], inplace=False)
+
+        # Combine to one game per row
+        df_upc_starters = pd.merge(
+            df_lup_home,
+            df_lup_away,
+            how='left',
+            on=['gameId'],
+            validate='1:1'
+        )
+
+        # Concat hist and upc vertically to merge back to summary attrib
+        df_starters = pd.concat(
+            objs=[df_hist_starters, df_upc_starters],
+            axis=0
+        )
+        
+        # Merge to summary attribute
         self.summary = pd.merge(
             self.summary,
             df_starters,
@@ -369,7 +432,7 @@ class diamond(object):
 
             # Set
             # TODO Standard Deviation might not be best here
-            aggDict = {stat: ['mean', 'std'] for stat in [
+            aggDict = {stat: ['mean', 'max', 'min'] for stat in [
                 x for x in self.bullpen_reliever_summary.columns if
                 any(y in x for y in self.pitching_stats)
             ]}
@@ -461,7 +524,7 @@ class diamond(object):
             axis=0
         )
 
-        # Actual
+        # Actual        
         actual = df_lineup.loc[df_lineup['positionStatus'] == 'actual', :]
         actual = actual.drop_duplicates(subset=['gameId', 'playerId'])
         actual_ids = list(set(actual.gameId))
@@ -754,8 +817,9 @@ class diamond(object):
                     print(col, np.mean(sub[col].isnull()))
                 print(sub.shape)
                 for col in feats:
-                    med = np.median(sub.loc[~sub[col].isin([np.inf, -np.inf]), :][col])
+                    med = np.nanmedian(sub.loc[~sub[col].isin([np.inf, -np.inf]), :][col])
                     sub.loc[sub[col].isin([np.inf, -np.inf]), col] = med
+                    sub.loc[sub[col].isnull(), col] = med
                 print("Bullpen summary missing features below")
                 print([
                     f for f in feats if f not in
@@ -840,25 +904,33 @@ if __name__ == "__main__":
 
     
     print("Instantiate")
-    d = diamond(seasonKey='s2019')
+    d = diamond(seasonKey='s2019',
+                upcoming_start_gte=dt.datetime(year=2019, month=9, day=20))
     
-    #print("Adding batting stats")
-    #d.add_batter_rolling_stats()
     print("Adding starting pitcher summary")
     d.add_starting_pitchers()
+
     print("Adding bullpen summary")
     d.add_bullpen_summary()
+
     print("Adding pitcher rolling stats")
     d.add_pitcher_rolling_stats()
     
     print("Fitting starting pitcher cluster")
     d.fit_starting_pitcher_cluster_model()
-    d.starting_pitcher_summary.to_csv('/Users/peteraltamura/Desktop/pitcher_summary_test.csv', index=False)
+    d.starting_pitcher_summary.to_csv(
+        '/Users/peteraltamura/Desktop/pitcher_summary_test.csv',
+        index=False
+    )
 
+    # Batter Rolling Stats
+    print("Adding batter rolling stats")
+    d.add_batter_rolling_stats()
     print("Fitting batting cluster")
     d.fit_batter_cluster_model()
     d.batter_summary.to_csv('/Users/peteraltamura/Desktop/batter_summary_test.csv', index=False)
 
+    print("Fitting bullpen cluster Model")
     d.fit_bullpen_cluster_model()
     d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
     print(d.__dict__)
