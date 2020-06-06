@@ -270,19 +270,33 @@ class diamond(object):
             
             df_ab_h = df_ab.loc[df_ab['inningHalf']==half_, :]
             # Sort
-            df_ab_h = df_ab_h.sort_values(by=['gameId', 'inning', 'outCount'], ascending=True, inplace=False)
+            df_ab_h = df_ab_h.sort_values(
+                by=['gameId', 'inning', 'outCount'],
+                ascending=True,
+                inplace=False
+            )
+            
             # Drop labels
             df_ab_h = df_ab_h.drop(labels=['inning', 'outCount'], axis=1, inplace=False)
-            # Remove pitcher who was already identified as starter (self.summary['homeStartingPitcherId'].iloc[0]?
+
+            # Remove pitcher who was already identified as starter
+            #    (self.summary['homeStartingPitcherId'].iloc[0]?
             df_ab_h.loc[:, '{}StartingPitcherId'.format(disp)] = \
                 df_ab_h['gameId'].map(startingPitcherMap)
-            df_ab_h = df_ab_h.loc[df_ab_h['pitcherId'] != df_ab_h['{}StartingPitcherId'.format(disp)], :]
+            df_ab_h = df_ab_h.loc[
+                df_ab_h['pitcherId'] != df_ab_h['{}StartingPitcherId'.format(disp)], :]
+
             # Handle ordering
-            df_ab_h['pitcherAppearOrder'] = df_ab_h.groupby(by=['gameId'])['pitcherId'].rank(method='first')
-            df_ab_h = df_ab_h.groupby(by=['gameId', '{}TeamId'.format(disp), 'pitcherId'],
-                                      as_index=False).agg({'pitcherAppearOrder': 'min'})
-            df_ab_h['pitcherAppearOrder'] = df_ab_h.groupby(by=['gameId'])['pitcherId'].rank(method='first')
-            df_ab_h['pitcherAppearOrderMax'] = df_ab_h.groupby('gameId')['pitcherAppearOrder'].transform('max')
+            df_ab_h['pitcherAppearOrder'] = df_ab_h\
+                .groupby(by=['gameId'])['pitcherId'].rank(method='first')
+            df_ab_h = df_ab_h.groupby(
+                by=['gameId', '{}TeamId'.format(disp), 'pitcherId'],
+                as_index=False).agg({'pitcherAppearOrder': 'min'})
+            df_ab_h['pitcherAppearOrder'] = df_ab_h\
+                .groupby(by=['gameId'])['pitcherId'].rank(method='first')
+            df_ab_h['pitcherAppearOrderMax'] = df_ab_h\
+                .groupby('gameId')['pitcherAppearOrder'].transform('max')
+
             # Label middle pitchers relief role and last pitcher closer` role
             msk = (df_ab_h['pitcherAppearOrder']==df_ab_h['pitcherAppearOrderMax'])
             df_ab_h.loc[msk, 'pitcherRoleType'] = 'closer'
@@ -296,8 +310,10 @@ class diamond(object):
             bullpen_summary.append(df_ab_h)
             
         bullpen_summary = pd.concat(objs=bullpen_summary, axis=0)
-        self.bullpen_reliever_summary = bullpen_summary.loc[bullpen_summary['pitcherRoleType'] == 'reliever', :]
-        self.bullpen_closer_summary = bullpen_summary.loc[bullpen_summary['pitcherRoleType'] == 'closer', :]
+        self.bullpen_reliever_summary = bullpen_summary.loc[
+            bullpen_summary['pitcherRoleType'] == 'reliever', :]
+        self.bullpen_closer_summary = bullpen_summary.loc[
+            bullpen_summary['pitcherRoleType'] == 'closer', :]
 
 
     def add_pitcher_rolling_stats(
@@ -458,7 +474,7 @@ class diamond(object):
                 self.add_bullpen_summary(dispositions=dispositions)
 
             # Merge back to closers in bullpen summary
-            msk = (self.bullpen_closer_summary['pitcherRoleType'] == 'closer')
+            msk = (self.bullpen_closer_summary['pitcherRoleType'].str.lower() == 'closer')
             bullpen = self.bullpen_closer_summary.loc[msk, :]
             if bullpen.shape[0] == 0:
                 warnings.warn("    No closing pitchers found in bullpen_summary attribute")
@@ -491,17 +507,22 @@ class diamond(object):
             )
 
             # Set
-            self.bullpen_closer_summary = self.bullpen_closer_summary.groupby(
-                by=['gameId', 'teamId', 'bullpenDisposition', 'pitcherId'],
+            # TODO Standard Deviation might not be best here
+            aggDict = {stat: ['mean', 'max', 'min'] for stat in [
+                x for x in self.bullpen_closer_summary.columns if
+                any(y in x for y in self.pitching_stats)
+            ]}
+            df = self.bullpen_closer_summary.groupby(
+                by=['gameId', 'teamId', 'bullpenDisposition'],
                 as_index=False
-            ).agg({stat: ['mean', 'std'] for stat in
-                [x for x in self.bullpen_closer_summary if any(
-                    y in x for y in self.pitching_stats
-                )]})
-            self.bullpen_closer_summary.columns = [
+            ).agg(aggDict)
+            for col in df.columns:
+                print(col, np.mean(df[col].isnull()))
+            df.columns = [
                 x[0] if x[1] == '' else x[0]+"~"+x[1] for x in
-                self.bullpen_closer_summary.columns
+                df.columns
             ]
+            self.bullpen_closer_summary = df
 
 
     def add_lineups(self, status='auto'):
@@ -850,6 +871,7 @@ class diamond(object):
                 )
 
             if roletype == 'closer':
+                print([f for f in feats if f not in self.bullpen_closer_summary.columns])
                 assert all(f in self.bullpen_closer_summary.columns for f in feats)
                 sub = self.bullpen_closer_summary.loc[:,
                     ['gameId', 'teamId'] + feats
@@ -932,7 +954,12 @@ if __name__ == "__main__":
 
     print("Fitting bullpen cluster Model")
     d.fit_bullpen_cluster_model()
-    d.bullpen_summary.to_csv('/Users/peteraltamura/Desktop/bullpen_summary_test.csv', index=False)
-    print(d.__dict__)
+    d.bullpen_reliever_summary.to_csv(
+        '/Users/peteraltamura/Desktop/bullpen_reliever_summary_test.csv',
+        index=False
+    )
+    d.bullpen_closer_summary.to_csv(
+        '/Users/peteraltamura/Desktop/bullpen_closer_summary_test.csv',
+        index=False
+    )
 
-    
