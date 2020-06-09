@@ -1,7 +1,6 @@
 import os
 import gc
 import sys
-print(sys.path)
 import pickle
 import warnings
 import numpy as np
@@ -355,7 +354,8 @@ class diamond(object):
         ]
 
         # Sort
-        ptch_roll.sort_values(by=['gameStartDate'], ascending=True, inplace=True)
+        ptch_roll.sort_values(by=['playerId', 'gameStartDate'], ascending=True, inplace=True)
+        ptch_roll.reset_index(drop=True, inplace=True)
 
         # Shift back if interested in rolling stats leading up to game
         if shift_back:
@@ -596,8 +596,9 @@ class diamond(object):
         ]
 
         # Sort
-        bat_roll.sort_values(by=['gameStartDate'], ascending=True, inplace=True)
-
+        bat_roll.sort_values(by=['playerId', 'gameStartDate'], ascending=True, inplace=True)
+        bat_roll.reset_index(drop=True, inplace=True)
+        
         # Shift back if interested in rolling stats leading up to game
         if shift_back:
             for col in self.batting_roll_stats:
@@ -903,3 +904,8 @@ class diamond(object):
         #
         print()
 
+if __name__ == "__main__":
+    d = diamond(seasonKey='s2019',
+                upcoming_start_gte=dt.datetime(year=2019, month=9, day=20))
+    d.add_batter_rolling_stats()
+    d.add_pitcher_rolling_stats()
