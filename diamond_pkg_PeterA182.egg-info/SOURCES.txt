@@ -1,0 +1,10 @@
+README.md
+setup.py
+diamond/__init__.py
+diamond/core.py
+diamond/helpers.py
+diamond/utilities.py
+diamond_pkg_PeterA182.egg-info/PKG-INFO
+diamond_pkg_PeterA182.egg-info/SOURCES.txt
+diamond_pkg_PeterA182.egg-info/dependency_links.txt
+diamond_pkg_PeterA182.egg-info/top_level.txt

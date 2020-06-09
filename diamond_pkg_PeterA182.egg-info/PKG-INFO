@@ -1,0 +1,13 @@
+Metadata-Version: 1.2
+Name: diamond-pkg-PeterA182
+Version: 0.0.1
+Summary: A class structure for manipulating Normalized MySportsFeed API baseball data
+Home-page: https://github.com/PeterA182/diamond
+Author: Peter Altamura
+License: UNKNOWN
+Description: UNKNOWN
+Platform: UNKNOWN
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: MacOS
+Requires-Python: >=3.6
