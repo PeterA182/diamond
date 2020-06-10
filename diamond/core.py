@@ -893,8 +893,33 @@ class diamond(object):
         """
         """
 
-        #
-        print()
+        # Get path using year from seasonKey and get latest date with that year
+        path = CONFIG.get(self.league)\
+            .get('paths')\
+            .get('normalized')\
+            .format(f='elo')
+        dir_latest = sorted([
+            f for f in os.listdir(path) if f[:4] == self.seasonKey[1:5]
+        ])[-1]
+        path += dir_latest + "/elo_register.parquet"
+        df = pd.read_parquet(path)
+
+        # Subset cols before merge
+        cols = [
+            'gameId',
+            'awayTeam_elo_in', 'awayTeam_elo_out', 'awayTeam_elo_delta',
+            'homeTeam_elo_in', 'homeTeam_elo_out', 'homeTeam_elo_delta'
+        ]
+        df = df.loc[:, cols]
+        
+        # Merge to summary
+        self.summary = pd.merge(
+            self.summary,
+            df,
+            how='left',
+            on=['gameId'],
+            validate='1:1'
+        )
 
 
     def add_wager_table(self, seasonKey=None):
