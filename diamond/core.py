@@ -807,7 +807,7 @@ class diamond(object):
                 model_fname = CONFIG.get(self.league)\
                                     .get('models')\
                                     .get('cluster')\
-                                    .get('bullpen_{}'.format(roletype)\
+                                    .get('bullpen_{}'.format(roletype))\
                                     .get('model_filename')
                 feat_fname = CONFIG.get(self.league)\
                                    .get('models')\
@@ -842,8 +842,8 @@ class diamond(object):
                 df_sc = scaler.transform(sub[feats])
                 clstr.fit(df_sc)
                 
-                sub.loc[:, 'teamBullpenClusterName'] = clstr.labels_
-                sub = sub.loc[:, ['gameId', 'teamId', 'teamBullpenClusterName']]
+                sub.loc[:, 'teamBullpenReliefClusterName'] = clstr.labels_
+                sub = sub.loc[:, ['gameId', 'teamId', 'teamBullpenReliefClusterName']]
                 # Subset of summary
                 smry = self.bullpen_reliever_summary.drop_duplicates(subset=['gameId', 'teamId'])
                 self.bullpen_reliever_summary = pd.merge(
@@ -867,8 +867,8 @@ class diamond(object):
                 scaler = StandardScaler()
                 df_sc = scaler.fit_transform(sub[feats])
                 clstr.fit(df_sc)
-                sub.loc[:, 'teamBullpenClusterName'] = clstr.labels_
-                sub = sub.loc[:, ['gameId', 'teamId', 'teamBullpenClusterName']]
+                sub.loc[:, 'teamBullpenCloserClusterName'] = clstr.labels_
+                sub = sub.loc[:, ['gameId', 'teamId', 'teamBullpenCloserClusterName']]
                 self.bullpen_closer_summary = pd.merge(
                     self.bullpen_closer_summary,
                     sub,
