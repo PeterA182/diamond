@@ -807,12 +807,12 @@ class diamond(object):
                 model_fname = CONFIG.get(self.league)\
                                     .get('models')\
                                     .get('cluster')\
-                                    .get('bullpen')\
+                                    .get('bullpen_{}'.format(roletype)\
                                     .get('model_filename')
                 feat_fname = CONFIG.get(self.league)\
                                    .get('models')\
                                    .get('cluster')\
-                                   .get('bullpen')\
+                                   .get('bullpen_{}'.format(roletype))\
                                    .get('model_features')
             else:
                 path = kwargs.get('path')
