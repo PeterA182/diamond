@@ -78,9 +78,12 @@ mlb:
       starting_pitcher:
         model_filename: ptch_k17_cluster_model.pkl
         model_features: ptch_k17_cluster_model_features.csv
-      bullpen:
-        model_filename: bullpen_k11_cluster_model.pkl
-        model_features: bullpen_k11_cluster_model_features.csv
+      bullpen_reliever:
+        model_filename: bullpen_reliever_k11_cluster_model.pkl
+        model_features: bullpen_reliever_k11_cluster_model_features.csv
+      bullpen_closer:
+        model_filename: bullpen_closer_k5_cluster_model.pkl
+        model_features: bullpen_closer_k5_cluster_model_features.csv
 
 nba:
   paths:
