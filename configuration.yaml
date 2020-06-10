@@ -79,8 +79,8 @@ mlb:
         model_filename: ptch_k17_cluster_model.pkl
         model_features: ptch_k17_cluster_model_features.csv
       bullpen:
-        model_filename: bullpen_k10_cluster_model.pkl
-        model_features: bullpen_k10_cluster_model_features.csv
+        model_filename: bullpen_k11_cluster_model.pkl
+        model_features: bullpen_k11_cluster_model_features.csv
 
 nba:
   paths:
